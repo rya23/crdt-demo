@@ -188,11 +188,6 @@ class CRDTDocument {
 - No cursor-presence or selection synchronization
 - Text diffing in the UI assumes a single contiguous change per input event (works well for typical typing/editing)
 
-## Development Notes
-
-- `react-refresh/only-export-components` is disabled for generated `src/components/ui/*` files because shadcn component files export variant constants.
-- TypeScript path alias and deprecation settings are configured in `tsconfig.app.json` and `tsconfig.node.json`.
-
 ## Validation Checklist
 
 Before committing changes, run:
