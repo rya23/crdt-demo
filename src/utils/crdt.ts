@@ -33,22 +33,39 @@ function getContent(doc: Doc): string {
     return text;
 }
 
+const findItemAtPos = (doc: Doc, pos: number, stickEnd: boolean = false): number => {
+    let i = 0;
+    // console.log('pos', pos, doc.length, doc.content.length)
+    for (; i < doc.content.length; i++) {
+        const item = doc.content[i];
+        if (stickEnd && pos === 0) return i;
+        else if (item.deleted) continue;
+        else if (pos === 0) return i;
+
+        pos--;
+    }
+
+    if (pos === 0) return i;
+    else throw Error("past end of the document");
+};
+
 function localInsertOne(doc: Doc, agent: string, pos: number, text: string) {
     let seq = 0;
     if (doc.version[agent] != null) {
         seq = doc.version[agent] + 1;
     }
+    const idx = findItemAtPos(doc, pos, true);
 
     merge(doc, {
         content: text,
         id: [agent, seq],
-        originLeft: doc.content[pos - 1]?.id ?? null,
-        originRight: doc.content[pos]?.id ?? null,
+        originLeft: doc.content[idx - 1]?.id ?? null,
+        originRight: doc.content[idx]?.id ?? null,
         deleted: false,
     });
 }
 
-function localInsert(doc: Doc, agent: string, seq: number, pos: number, text: string) {
+function localInsert(doc: Doc, agent: string, pos: number, text: string) {
     const content = [...text];
 
     for (const c of content) {
@@ -59,6 +76,14 @@ function localInsert(doc: Doc, agent: string, seq: number, pos: number, text: st
 
 function remoteInsert(doc: Doc, item: Item) {
     merge(doc, item);
+}
+
+function localDelete(doc: Doc, pos: number, delLen: number) {
+    while (delLen > 0) {
+        const idx = findItemAtPos(doc, pos, false);
+        doc.content[idx].deleted = true;
+        delLen--;
+    }
 }
 
 function isEqual(a: ID | null, b: ID | null): boolean {
@@ -149,12 +174,87 @@ function merge(doc: Doc, newItem: Item) {
     // if (!newItem.deleted) doc.length += 1
 }
 
-const doc = createDoc();
+function isInVersion(id: ID | null, version: Version): boolean {
+    if (id == null) return true;
+    const [agent, seq] = id;
+    const highestSeq = version[agent];
+    if (highestSeq == null) {
+        return false;
+    } else {
+        return highestSeq >= seq;
+    }
 
-localInsertOne(doc, "rya", 0, "a");
+    // return highestSeq != null && highestSeq >= seq
+}
 
-localInsertOne(doc, "rya", 0, "q");
+function canInsertNow(item: Item, doc: Doc): boolean {
+    // We need item.id to not be in doc.versions, but originLeft and originRight to be in.
+    // We're also inserting each item from each agent in sequence.
+    const [agent, seq] = item.id;
+    return (
+        !isInVersion(item.id, doc.version) &&
+        (seq === 0 || isInVersion([agent, seq - 1], doc.version)) &&
+        isInVersion(item.originLeft, doc.version) &&
+        isInVersion(item.originRight, doc.version)
+    );
+}
 
-localInsertOne(doc, "rya", 0, "c");
-console.log("DocContent : ", getContent(doc));
-console.table(doc.content);
+function mergeInto(dest: Doc, src: Doc) {
+    const missing: (Item | null)[] = src.content.filter((item) => !isInVersion(item.id, dest.version));
+    let remaining = missing.length;
+
+    while (remaining > 0) {
+        // Find the next item in remaining and insert it.
+        let mergedOnThisPass = 0;
+
+        for (let i = 0; i < missing.length; i++) {
+            const item = missing[i];
+            if (item == null) continue;
+            if (!canInsertNow(item, dest)) continue;
+
+            // Insert it.
+            remoteInsert(dest, item);
+            missing[i] = null;
+            remaining--;
+            mergedOnThisPass++;
+        }
+
+        if (mergedOnThisPass === 0) throw Error("Not making progress");
+    }
+
+    let srcIdx = 0,
+        destIdx = 0;
+    while (srcIdx < src.content.length) {
+        const srcItem = src.content[srcIdx];
+        let destItem = dest.content[destIdx];
+
+        while (!isEqual(srcItem.id, destItem.id)) {
+            destIdx++;
+            destItem = dest.content[destIdx];
+        }
+
+        if (srcItem.deleted) {
+            destItem.deleted = true;
+        }
+
+        srcIdx++;
+        destIdx++;
+    }
+}
+
+const doc1 = createDoc();
+const doc2 = createDoc();
+
+localInsertOne(doc1, "rya", 0, "a");
+
+localInsertOne(doc2, "rya1", 0, "q");
+
+localInsertOne(doc1, "rya", 0, "c");
+console.table(doc1.content);
+
+localDelete(doc1, 0, 1);
+mergeInto(doc2, doc1);
+// mergeInto(doc1, doc2);
+
+console.log("DocContent : ", getContent(doc2));
+console.table(doc2.content);
