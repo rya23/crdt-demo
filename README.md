@@ -9,6 +9,8 @@ This project demonstrates how a character-level CRDT can keep two editor replica
 - manual one-way sync/push between replicas
 - transparent internals (version vector, CRDT item table, action timeline)
 
+![website_demo](public/demo.gif)
+
 ## Features
 
 - Two independent editor replicas (`Editor A`, `Editor B`) powered by `CRDTDocument`
