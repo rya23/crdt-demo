@@ -1,75 +1,201 @@
-# React + TypeScript + Vite
+# CRDT Collaborative Editor Playground
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A full-stack-less collaborative editing playground built with React, TypeScript, shadcn/ui, and Tailwind CSS.
 
-Currently, two official plugins are available:
+This project demonstrates how a character-level CRDT can keep two editor replicas consistent while supporting:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- automatic live merge (Google Docs style) when connected
+- simulated network partitions (isolate one editor)
+- manual one-way sync/push between replicas
+- transparent internals (version vector, CRDT item table, action timeline)
 
-## React Compiler
+## Features
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+- Two independent editor replicas (`Editor A`, `Editor B`) powered by `CRDTDocument`
+- Automatic merge when both replicas are connected
+- Per-editor isolate/reconnect controls
+- Pending operation counters (`A -> B`, `B -> A`)
+- Manual controls:
+    - push `A -> B`
+    - push `B -> A`
+    - two-way sync
+    - reset demo
+- Under-the-hood panel per editor:
+    - version vector
+    - ordered CRDT item list with tombstones
+- Action timeline with local/network/sync event types
 
-Note: This will impact Vite dev & build performances.
+## Tech Stack
 
-## Expanding the ESLint configuration
+- React 19
+- TypeScript 6
+- Vite 8
+- Tailwind CSS v4
+- shadcn/ui (Radix Vega style)
+- Radix primitives (via `radix-ui` package)
+- Lucide icons
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Project Structure
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+.
+├── components.json
+├── src
+│   ├── App.tsx
+│   ├── index.css
+│   ├── main.tsx
+│   ├── components
+│   │   ├── CRDTDemo.tsx
+│   │   └── ui
+│   │       ├── accordion.tsx
+│   │       ├── badge.tsx
+│   │       ├── button.tsx
+│   │       ├── card.tsx
+│   │       ├── scroll-area.tsx
+│   │       ├── separator.tsx
+│   │       ├── table.tsx
+│   │       └── textarea.tsx
+│   ├── lib
+│   │   └── utils.ts
+│   └── utils
+│       └── crdt.ts
+├── tsconfig.json
+├── tsconfig.app.json
+├── tsconfig.node.json
+└── vite.config.ts
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Getting Started
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Prerequisites
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- Node.js 20+ (recommended)
+- npm (or bun)
+
+### Install dependencies
+
+```bash
+npm install
+```
+
+### Start development server
+
+```bash
+npm run dev
+```
+
+Open the local URL shown by Vite.
+
+### Build production bundle
+
+```bash
+npm run build
+```
+
+### Run lint checks
+
+```bash
+npm run lint
+```
+
+### Preview production build
+
+```bash
+npm run preview
+```
+
+## Scripts
+
+| Command           | Description                              |
+| ----------------- | ---------------------------------------- |
+| `npm run dev`     | Start Vite dev server                    |
+| `npm run build`   | Type-check (`tsc -b`) + production build |
+| `npm run lint`    | Run ESLint                               |
+| `npm run preview` | Preview built app                        |
+
+## shadcn/ui + Tailwind Setup (from scratch)
+
+This repository is already configured, but if you need to reproduce setup in a fresh Vite app, run:
+
+```bash
+# 1) Initialize shadcn in a Vite + Radix project
+npx shadcn@latest init -t vite -b radix -p vega -y
+
+# 2) Add components used by this demo
+npx shadcn@latest add card badge textarea table scroll-area separator accordion
+```
+
+Notes:
+
+- Tailwind v4 is loaded in `src/index.css`.
+- The `@/*` alias is configured in TS configs and `vite.config.ts`.
+- `components.json` defines shadcn aliases and styling mode (`radix-vega`).
+
+## How the Demo Works
+
+1. Both editors start connected.
+2. Typing in one editor creates local CRDT operations.
+3. If both are connected, operations merge automatically into the peer replica.
+4. If one editor is isolated, operations remain local and pending counters increase.
+5. Use push/sync controls (or reconnect) to deliver queued changes.
+
+## CRDT Core API
+
+The CRDT engine lives in `src/utils/crdt.ts`.
+
+### Main class
+
+```ts
+class CRDTDocument {
+    constructor(initialDoc?: Doc);
+
+    static fromDoc(doc: Doc): CRDTDocument;
+
+    getText(): string;
+    insert(agent: string, pos: number, text: string): void;
+    insertOne(agent: string, pos: number, char: string): void;
+    delete(pos: number, length: number): void;
+
+    mergeFrom(source: CRDTDocument | Doc): void;
+    applyRemoteInsert(item: Item): void;
+
+    toDoc(): Doc;
+    getItems(): Item[];
+    getVersion(): Version;
+}
+```
+
+### Data model
+
+- `ID = [agent, seq]`
+- `Item` contains content, unique id, left/right origins, and `deleted` tombstone state
+- `Version` tracks the highest sequence applied per agent
+- `Doc` contains ordered content items and version map
+
+## CRDT Merge Model (high level)
+
+- Inserts are causal and ordered by:
+    - origin references (`originLeft`, `originRight`)
+    - deterministic conflict resolution by agent id when origins collide
+- Deletes mark tombstones (`deleted = true`) instead of removing items
+- Replica merge (`mergeInto`) applies missing operations only when dependencies exist, then propagates delete flags
+
+## Limitations / Scope
+
+- In-memory simulation only (no real server transport layer)
+- No cursor-presence or selection synchronization
+- Text diffing in the UI assumes a single contiguous change per input event (works well for typical typing/editing)
+
+## Development Notes
+
+- `react-refresh/only-export-components` is disabled for generated `src/components/ui/*` files because shadcn component files export variant constants.
+- TypeScript path alias and deprecation settings are configured in `tsconfig.app.json` and `tsconfig.node.json`.
+
+## Validation Checklist
+
+Before committing changes, run:
+
+```bash
+npm run lint
+npm run build
 ```
