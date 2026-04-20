@@ -1,6 +1,6 @@
-type ID = [agent: string, seq: number];
+export type ID = [agent: string, seq: number];
 
-type Item = {
+export type Item = {
     content: string;
     id: ID;
     originLeft: ID | null;
@@ -8,12 +8,36 @@ type Item = {
     deleted: boolean;
 };
 
-type Version = Record<string, number>;
+export type Version = Record<string, number>;
 
-type Doc = {
+export type Doc = {
     content: Item[];
     version: Version;
 };
+
+function cloneId(id: ID): ID;
+function cloneId(id: ID | null): ID | null;
+function cloneId(id: ID | null): ID | null {
+    if (id == null) return null;
+    return [id[0], id[1]];
+}
+
+function cloneItem(item: Item): Item {
+    return {
+        content: item.content,
+        id: cloneId(item.id),
+        originLeft: cloneId(item.originLeft),
+        originRight: cloneId(item.originRight),
+        deleted: item.deleted,
+    };
+}
+
+function cloneDoc(doc: Doc): Doc {
+    return {
+        content: doc.content.map(cloneItem),
+        version: { ...doc.version },
+    };
+}
 
 function createDoc(): Doc {
     return {
@@ -75,7 +99,7 @@ function localInsert(doc: Doc, agent: string, pos: number, text: string) {
 }
 
 function remoteInsert(doc: Doc, item: Item) {
-    merge(doc, item);
+    merge(doc, cloneItem(item));
 }
 
 function localDelete(doc: Doc, pos: number, delLen: number) {
@@ -120,9 +144,9 @@ function merge(doc: Doc, newItem: Item) {
     // If originLeft is null, that means it was inserted at the start of the document.
     // We'll pretend there was some item at position -1 which we were inserted to the
     // right of.
-    let left = findItemIndexAtId(doc, newItem.originLeft) ?? -1;
+    const left = findItemIndexAtId(doc, newItem.originLeft) ?? -1;
     let destIdx = left + 1;
-    let right = newItem.originRight == null ? doc.content.length : findItemIndexAtId(doc, newItem.originRight)!;
+    const right = newItem.originRight == null ? doc.content.length : findItemIndexAtId(doc, newItem.originRight)!;
     let scanning = false;
 
     // This loop scans forward from destIdx until it finds the right place to insert into
@@ -133,10 +157,10 @@ function merge(doc: Doc, newItem: Item) {
         if (i === doc.content.length) break;
         if (i === right) break; // No ambiguity / concurrency. Insert here.
 
-        let other = doc.content[i];
+        const other = doc.content[i];
 
-        let oleft = findItemIndexAtId(doc, other.originLeft) ?? -1;
-        let oright = other.originRight == null ? doc.content.length : findItemIndexAtId(doc, other.originRight)!;
+        const oleft = findItemIndexAtId(doc, other.originLeft) ?? -1;
+        const oright = other.originRight == null ? doc.content.length : findItemIndexAtId(doc, other.originRight)!;
 
         // The logic below summarizes to:
         // if (oleft < left || (oleft === left && oright === right && newItem.id[0] < other.id[0])) break;
@@ -242,19 +266,60 @@ function mergeInto(dest: Doc, src: Doc) {
     }
 }
 
-const doc1 = createDoc();
-const doc2 = createDoc();
+export class CRDTDocument {
+    private readonly doc: Doc;
 
-localInsertOne(doc1, "rya", 0, "a");
+    constructor(initialDoc?: Doc) {
+        this.doc = initialDoc ? cloneDoc(initialDoc) : createDoc();
+    }
 
-localInsertOne(doc2, "rya1", 0, "q");
+    static fromDoc(doc: Doc): CRDTDocument {
+        return new CRDTDocument(doc);
+    }
 
-localInsertOne(doc1, "rya", 0, "c");
-console.table(doc1.content);
+    getText(): string {
+        return getContent(this.doc);
+    }
 
-localDelete(doc1, 0, 1);
-mergeInto(doc2, doc1);
-// mergeInto(doc1, doc2);
+    insert(agent: string, pos: number, text: string): void {
+        localInsert(this.doc, agent, pos, text);
+    }
 
-console.log("DocContent : ", getContent(doc2));
-console.table(doc2.content);
+    insertOne(agent: string, pos: number, char: string): void {
+        if ([...char].length !== 1) {
+            throw Error("insertOne expects exactly one character");
+        }
+        localInsertOne(this.doc, agent, pos, char);
+    }
+
+    delete(pos: number, length: number): void {
+        localDelete(this.doc, pos, length);
+    }
+
+    mergeFrom(source: CRDTDocument | Doc): void {
+        const sourceDoc = source instanceof CRDTDocument ? source.doc : source;
+        mergeInto(this.doc, sourceDoc);
+    }
+
+    applyRemoteInsert(item: Item): void {
+        remoteInsert(this.doc, item);
+    }
+
+    toDoc(): Doc {
+        return cloneDoc(this.doc);
+    }
+
+    getItems(): Item[] {
+        return this.doc.content.map(cloneItem);
+    }
+
+    getVersion(): Version {
+        return { ...this.doc.version };
+    }
+}
+
+export function createCRDTDocument(initialDoc?: Doc): CRDTDocument {
+    return new CRDTDocument(initialDoc);
+}
+
+export default CRDTDocument;
