@@ -162,6 +162,15 @@
     gap: 10px;
 }
 
+.editor-top-controls {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.btn-isolate {
+    width: fit-content;
+}
+
 .editor-heading {
     display: flex;
     justify-content: space-between;

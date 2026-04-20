@@ -254,12 +254,6 @@ export default function CRDTDemo() {
                 </div>
 
                 <div className="button-row">
-                    <button type="button" onClick={() => toggleIsolation("A")} className="btn btn-secondary">
-                        {connection.A ? "Isolate Editor A" : "Reconnect Editor A"}
-                    </button>
-                    <button type="button" onClick={() => toggleIsolation("B")} className="btn btn-secondary">
-                        {connection.B ? "Isolate Editor B" : "Reconnect Editor B"}
-                    </button>
                     <button type="button" onClick={() => syncDocs("both", "Manual two-way sync")} className="btn btn-primary">
                         Sync Both Now
                     </button>
@@ -271,6 +265,12 @@ export default function CRDTDemo() {
 
             <section className="editor-grid">
                 <article className="editor-card">
+                    <div className="editor-top-controls">
+                        <button type="button" onClick={() => toggleIsolation("A")} className="btn btn-secondary btn-isolate">
+                            {connection.A ? "Isolate Editor A" : "Reconnect Editor A"}
+                        </button>
+                    </div>
+
                     <div className="editor-heading">
                         <h2>Editor A</h2>
                         <span className={`status-dot ${connection.A ? "status-connected" : "status-isolated"}`}>
@@ -338,6 +338,12 @@ export default function CRDTDemo() {
                 </article>
 
                 <article className="editor-card">
+                    <div className="editor-top-controls">
+                        <button type="button" onClick={() => toggleIsolation("B")} className="btn btn-secondary btn-isolate">
+                            {connection.B ? "Isolate Editor B" : "Reconnect Editor B"}
+                        </button>
+                    </div>
+
                     <div className="editor-heading">
                         <h2>Editor B</h2>
                         <span className={`status-dot ${connection.B ? "status-connected" : "status-isolated"}`}>
