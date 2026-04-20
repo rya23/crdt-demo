@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import CRDTDocument, { type Item, type Version } from "../utils/crdt";
-import "./CRDTDemo.css";
+import { ArrowRightLeftIcon, GitMergeIcon, RefreshCcwIcon, UploadIcon, WifiIcon, WifiOffIcon } from "lucide-react";
+
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import CRDTDocument, { type Item, type Version } from "@/utils/crdt";
 
 type EditorId = "A" | "B";
 type LogKind = "local" | "sync" | "network";
@@ -96,6 +106,18 @@ function computeTextDelta(prev: string, next: string): TextDelta | null {
 
 function editorLabel(editor: EditorId): string {
     return editor === "A" ? "Editor A" : "Editor B";
+}
+
+function timelineTone(kind: LogKind): string {
+    if (kind === "local") return "border-secondary/60 bg-secondary/20";
+    if (kind === "sync") return "border-primary/45 bg-primary/8";
+    return "border-accent/70 bg-accent/20";
+}
+
+function timelineVariant(kind: LogKind): "default" | "secondary" | "outline" {
+    if (kind === "sync") return "default";
+    if (kind === "local") return "secondary";
+    return "outline";
 }
 
 export default function CRDTDemo() {
@@ -235,197 +257,169 @@ export default function CRDTDemo() {
 
     const autoMergeOn = connection.A && connection.B;
 
+    const renderEditorPanel = (editorId: EditorId, snapshotData: EditorSnapshot) => {
+        const connected = connection[editorId];
+        const pushDirection: SyncDirection = editorId === "A" ? "AtoB" : "BtoA";
+        const pushLabel = editorId === "A" ? "Push A -> B" : "Push B -> A";
+
+        return (
+            <Card key={editorId} className="border-border/70 bg-card/90">
+                <CardHeader>
+                    <CardTitle className="text-xl">{editorLabel(editorId)}</CardTitle>
+                    <CardDescription>
+                        {connected ? "Connected: local edits sync instantly." : "Isolated: local edits stay local until pushed."}
+                    </CardDescription>
+                    <CardAction className="flex items-center gap-2">
+                        <Badge variant={connected ? "default" : "outline"}>{connected ? "Connected" : "Isolated"}</Badge>
+                        <Button type="button" variant="outline" size="sm" onClick={() => toggleIsolation(editorId)}>
+                            {connected ? <WifiOffIcon data-icon="inline-start" /> : <WifiIcon data-icon="inline-start" />}
+                            {connected ? `Isolate ${editorLabel(editorId)}` : `Reconnect ${editorLabel(editorId)}`}
+                        </Button>
+                    </CardAction>
+                </CardHeader>
+
+                <CardContent className="flex flex-col gap-3">
+                    <Textarea
+                        value={snapshotData.text}
+                        onChange={(event) => applyEditorChange(editorId, event.target.value)}
+                        className="min-h-44 resize-y font-mono text-sm"
+                        placeholder={`Type in ${editorLabel(editorId)}`}
+                        spellCheck={false}
+                        aria-label={editorLabel(editorId)}
+                    />
+
+                    <div className="flex justify-end">
+                        <Button type="button" onClick={() => syncDocs(pushDirection, `Manual push from ${editorLabel(editorId)}`)}>
+                            <UploadIcon data-icon="inline-start" />
+                            {pushLabel}
+                        </Button>
+                    </div>
+
+                    <Accordion type="single" collapsible defaultValue="under-the-hood">
+                        <AccordionItem value="under-the-hood">
+                            <AccordionTrigger>Under the hood</AccordionTrigger>
+                            <AccordionContent>
+                                <div className="flex flex-col gap-3 lg:flex-row">
+                                    <div className="w-full lg:max-w-56">
+                                        <p className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">Version Vector</p>
+                                        <pre className="overflow-auto rounded-lg border bg-muted/25 p-2 font-mono text-xs leading-relaxed">
+                                            {JSON.stringify(snapshotData.version, null, 2)}
+                                        </pre>
+                                    </div>
+
+                                    <div className="min-w-0 flex-1">
+                                        <p className="mb-1 text-xs font-medium tracking-wide text-muted-foreground uppercase">CRDT Items</p>
+                                        <ScrollArea className="h-44 rounded-lg border bg-background/80">
+                                            <Table>
+                                                <TableHeader>
+                                                    <TableRow>
+                                                        <TableHead>ID</TableHead>
+                                                        <TableHead>Char</TableHead>
+                                                        <TableHead>Deleted</TableHead>
+                                                        <TableHead>Origin L</TableHead>
+                                                        <TableHead>Origin R</TableHead>
+                                                    </TableRow>
+                                                </TableHeader>
+                                                <TableBody>
+                                                    {snapshotData.items.length === 0 ? (
+                                                        <TableRow>
+                                                            <TableCell colSpan={5} className="text-muted-foreground">
+                                                                No items yet.
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ) : (
+                                                        snapshotData.items.map((item, index) => (
+                                                            <TableRow
+                                                                key={`${item.id[0]}-${item.id[1]}-${index}`}
+                                                                className={cn(item.deleted && "text-muted-foreground line-through")}
+                                                            >
+                                                                <TableCell className="font-mono text-xs">{formatId(item.id)}</TableCell>
+                                                                <TableCell className="font-mono text-xs">{formatChar(item.content)}</TableCell>
+                                                                <TableCell className="font-mono text-xs">{item.deleted ? "yes" : "no"}</TableCell>
+                                                                <TableCell className="font-mono text-xs">{formatId(item.originLeft)}</TableCell>
+                                                                <TableCell className="font-mono text-xs">{formatId(item.originRight)}</TableCell>
+                                                            </TableRow>
+                                                        ))
+                                                    )}
+                                                </TableBody>
+                                            </Table>
+                                        </ScrollArea>
+                                    </div>
+                                </div>
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
+                </CardContent>
+            </Card>
+        );
+    };
+
     return (
-        <div className="crdt-demo">
-            <header className="crdt-header">
-                <p className="eyebrow">CRDT Demo</p>
-                <h1>Two Editors With Live Merge</h1>
-                <p className="intro">
-                    This playground shows each local operation, internal CRDT items, and version vectors. Keep both editors connected for Google Docs
-                    style live sync. Isolate one editor to create offline changes, then push manually.
-                </p>
-            </header>
+        <div className="flex h-full flex-col gap-4">
+            <Card className="border-border/70 bg-card/90">
+                <CardHeader>
+                    <CardTitle className="text-3xl md:text-4xl">Two Editors With Live Merge</CardTitle>
+                    <CardDescription>
+                        Type in either editor to generate CRDT operations. Keep both connected for Google Docs style live merge, or isolate one editor
+                        to create offline changes and push manually.
+                    </CardDescription>
+                </CardHeader>
 
-            <section className="network-toolbar">
-                <div className="pill-row">
-                    <span className={`pill ${autoMergeOn ? "pill-online" : "pill-split"}`}>Auto merge {autoMergeOn ? "ON" : "PARTITIONED"}</span>
-                    <span className="pill">Pending A -&gt; B: {pending.aToB}</span>
-                    <span className="pill">Pending B -&gt; A: {pending.bToA}</span>
-                </div>
+                <CardFooter className="border-t">
+                    <div className="flex w-full flex-wrap items-center gap-2">
+                        <Badge variant={autoMergeOn ? "default" : "outline"}>
+                            <GitMergeIcon data-icon="inline-start" />
+                            Auto merge {autoMergeOn ? "ON" : "PARTITIONED"}
+                        </Badge>
+                        <Badge variant="secondary">Pending A -&gt; B: {pending.aToB}</Badge>
+                        <Badge variant="secondary">Pending B -&gt; A: {pending.bToA}</Badge>
 
-                <div className="button-row">
-                    <button type="button" onClick={() => syncDocs("both", "Manual two-way sync")} className="btn btn-primary">
-                        Sync Both Now
-                    </button>
-                    <button type="button" onClick={resetDemo} className="btn btn-ghost">
-                        Reset Demo
-                    </button>
-                </div>
-            </section>
-
-            <section className="editor-grid">
-                <article className="editor-card">
-                    <div className="editor-top-controls">
-                        <button type="button" onClick={() => toggleIsolation("A")} className="btn btn-secondary btn-isolate">
-                            {connection.A ? "Isolate Editor A" : "Reconnect Editor A"}
-                        </button>
-                    </div>
-
-                    <div className="editor-heading">
-                        <h2>Editor A</h2>
-                        <span className={`status-dot ${connection.A ? "status-connected" : "status-isolated"}`}>
-                            {connection.A ? "Connected" : "Isolated"}
-                        </span>
-                    </div>
-
-                    <textarea
-                        value={editorA.text}
-                        onChange={(event) => applyEditorChange("A", event.target.value)}
-                        className="editor-input"
-                        placeholder="Type in Editor A"
-                        spellCheck={false}
-                        aria-label="Editor A"
-                    />
-
-                    <div className="editor-actions">
-                        <button type="button" onClick={() => syncDocs("AtoB", "Manual push from Editor A")} className="btn btn-primary">
-                            Push A -&gt; B
-                        </button>
-                    </div>
-
-                    <details className="under-hood" open>
-                        <summary>Under the hood</summary>
-                        <div className="hood-columns">
-                            <div>
-                                <h3>Version Vector</h3>
-                                <pre>{JSON.stringify(editorA.version, null, 2)}</pre>
-                            </div>
-                            <div>
-                                <h3>CRDT Items</h3>
-                                <div className="table-wrap">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>ID</th>
-                                                <th>Char</th>
-                                                <th>Deleted</th>
-                                                <th>Origin L</th>
-                                                <th>Origin R</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {editorA.items.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={5}>No items yet.</td>
-                                                </tr>
-                                            ) : (
-                                                editorA.items.map((item, index) => (
-                                                    <tr key={`${item.id[0]}-${item.id[1]}-${index}`} className={item.deleted ? "row-deleted" : ""}>
-                                                        <td>{formatId(item.id)}</td>
-                                                        <td>{formatChar(item.content)}</td>
-                                                        <td>{item.deleted ? "yes" : "no"}</td>
-                                                        <td>{formatId(item.originLeft)}</td>
-                                                        <td>{formatId(item.originRight)}</td>
-                                                    </tr>
-                                                ))
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                        <div className="ml-auto flex flex-wrap gap-2">
+                            <Button type="button" variant="secondary" onClick={() => syncDocs("both", "Manual two-way sync")}>
+                                <ArrowRightLeftIcon data-icon="inline-start" />
+                                Sync both now
+                            </Button>
+                            <Button type="button" variant="outline" onClick={resetDemo}>
+                                <RefreshCcwIcon data-icon="inline-start" />
+                                Reset demo
+                            </Button>
                         </div>
-                    </details>
-                </article>
-
-                <article className="editor-card">
-                    <div className="editor-top-controls">
-                        <button type="button" onClick={() => toggleIsolation("B")} className="btn btn-secondary btn-isolate">
-                            {connection.B ? "Isolate Editor B" : "Reconnect Editor B"}
-                        </button>
                     </div>
+                </CardFooter>
+            </Card>
 
-                    <div className="editor-heading">
-                        <h2>Editor B</h2>
-                        <span className={`status-dot ${connection.B ? "status-connected" : "status-isolated"}`}>
-                            {connection.B ? "Connected" : "Isolated"}
-                        </span>
-                    </div>
+            <Separator />
 
-                    <textarea
-                        value={editorB.text}
-                        onChange={(event) => applyEditorChange("B", event.target.value)}
-                        className="editor-input"
-                        placeholder="Type in Editor B"
-                        spellCheck={false}
-                        aria-label="Editor B"
-                    />
-
-                    <div className="editor-actions">
-                        <button type="button" onClick={() => syncDocs("BtoA", "Manual push from Editor B")} className="btn btn-primary">
-                            Push B -&gt; A
-                        </button>
-                    </div>
-
-                    <details className="under-hood" open>
-                        <summary>Under the hood</summary>
-                        <div className="hood-columns">
-                            <div>
-                                <h3>Version Vector</h3>
-                                <pre>{JSON.stringify(editorB.version, null, 2)}</pre>
-                            </div>
-                            <div>
-                                <h3>CRDT Items</h3>
-                                <div className="table-wrap">
-                                    <table>
-                                        <thead>
-                                            <tr>
-                                                <th>ID</th>
-                                                <th>Char</th>
-                                                <th>Deleted</th>
-                                                <th>Origin L</th>
-                                                <th>Origin R</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {editorB.items.length === 0 ? (
-                                                <tr>
-                                                    <td colSpan={5}>No items yet.</td>
-                                                </tr>
-                                            ) : (
-                                                editorB.items.map((item, index) => (
-                                                    <tr key={`${item.id[0]}-${item.id[1]}-${index}`} className={item.deleted ? "row-deleted" : ""}>
-                                                        <td>{formatId(item.id)}</td>
-                                                        <td>{formatChar(item.content)}</td>
-                                                        <td>{item.deleted ? "yes" : "no"}</td>
-                                                        <td>{formatId(item.originLeft)}</td>
-                                                        <td>{formatId(item.originRight)}</td>
-                                                    </tr>
-                                                ))
-                                            )}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </details>
-                </article>
+            <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                {renderEditorPanel("A", editorA)}
+                {renderEditorPanel("B", editorB)}
             </section>
 
-            <section className="timeline-card">
-                <h2>Action Timeline</h2>
-                <ul className="timeline-list">
-                    {logs.length === 0 ? (
-                        <li className="timeline-empty">No actions yet.</li>
-                    ) : (
-                        logs.map((entry) => (
-                            <li key={entry.id} className={`timeline-item timeline-${entry.kind}`}>
-                                <span className="timeline-time">{entry.time}</span>
-                                <span>{entry.message}</span>
-                            </li>
-                        ))
-                    )}
-                </ul>
-            </section>
+            <Card className="border-border/70 bg-card/90">
+                <CardHeader>
+                    <CardTitle>Action Timeline</CardTitle>
+                    <CardDescription>Every local edit, network event, and sync operation appears here in order.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ScrollArea className="h-72 rounded-lg border bg-background/80">
+                        <ul className="flex flex-col gap-2 p-3">
+                            {logs.length === 0 ? (
+                                <li className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">No actions yet.</li>
+                            ) : (
+                                logs.map((entry) => (
+                                    <li key={entry.id} className={cn("flex items-start gap-3 rounded-lg border p-2", timelineTone(entry.kind))}>
+                                        <Badge variant={timelineVariant(entry.kind)}>{entry.kind.toUpperCase()}</Badge>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="mb-1 font-mono text-xs text-muted-foreground">{entry.time}</p>
+                                            <p className="text-sm wrap-break-word">{entry.message}</p>
+                                        </div>
+                                    </li>
+                                ))
+                            )}
+                        </ul>
+                    </ScrollArea>
+                </CardContent>
+            </Card>
         </div>
     );
 }
